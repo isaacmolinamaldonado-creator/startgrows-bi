@@ -6,7 +6,7 @@ import { Employee, Commission } from '@/lib/types';
 import {
   fmt, fmtS, colorClass, empInitials, empMonthlySalary, empMonthsActive,
   empCommissionsTotal, empCommissionsThisMonth, empTotalPaidLifetime, empClientsClosedCount, empRevenueGenerated, empROI,
-  empCommissionCountThisMonth, empLadderTier,
+  empCommissionCountThisMonth, empCommissionCountThisMonthByType, empLadderTier,
 } from '@/lib/calculations';
 import { COUNTRIES } from '@/lib/defaultState';
 import CommissionModal from './CommissionModal';
@@ -53,6 +53,7 @@ export default function EmployeeCard({ employee }: EmployeeCardProps) {
   const roi = empROI(state, employee);
 
   const clientsThisMonth = empCommissionCountThisMonth(state, employee.id);
+  const clientsThisMonthByType = empCommissionCountThisMonthByType(state, employee.id);
   const monthsSustained = employee.monthsSustained || 0;
   const tier = empLadderTier(clientsThisMonth, monthsSustained);
   const suggestionDiffers = tier.suggestedFixed !== (employee.fixedSalary || 0);
@@ -132,7 +133,10 @@ export default function EmployeeCard({ employee }: EmployeeCardProps) {
       </div>
 
       <div className="ladderbox" style={{ marginBottom: 12 }}>
-        <div className="ladderrow"><span>Clientes cerrados este mes</span><span className="cur">{clientsThisMonth}</span></div>
+        <div className="ladderrow">
+          <span>Clientes cerrados este mes</span>
+          <span className="cur">{clientsThisMonth} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>({clientsThisMonthByType.mkt} Mkt · {clientsThisMonthByType.fin} Fin)</span></span>
+        </div>
         <div className="ladderrow">
           <span>Meses consecutivos sosteniendo 3-4+ clientes</span>
           <input
@@ -143,6 +147,10 @@ export default function EmployeeCard({ employee }: EmployeeCardProps) {
           />
         </div>
         <div className="ladderrow"><span>Comisión acumulada este mes</span><span className="cur">{fmt(empCommissionsThisMonthAmt)}</span></div>
+        <div className="ladderrow">
+          <span>Generado vs. pagado (histórico)</span>
+          <span className="cur">{fmt(roi.generated)} / {fmt(roi.cost)} <span className={colorClass(roi.net)}>→ {roi.ratio.toFixed(2)}x</span></span>
+        </div>
         <div className="suggestbar">
           <div className="suggesttext">La escalera sugiere: <span className="tier">{tier.label}</span></div>
           <button

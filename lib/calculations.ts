@@ -271,6 +271,20 @@ export function empCommissionCountThisMonth(state: AppState, employeeId: number)
   }).length;
 }
 
+// Mismo conteo que arriba, pero separado por tipo de cliente (Marketing vs Financiero) —
+// para saber no solo cuántos clientes trajo este mes, sino de qué servicio.
+export function empCommissionCountThisMonthByType(state: AppState, employeeId: number): { mkt: number; fin: number } {
+  const thisMonth = state.commissions.filter((c) => {
+    if (c.employeeId !== employeeId) return false;
+    const d = new Date(c.date);
+    return d.getMonth() === state.curMonth && d.getFullYear() === state.curYear;
+  });
+  return {
+    mkt: thisMonth.filter((c) => c.type === 'mkt').length,
+    fin: thisMonth.filter((c) => c.type === 'fin').length,
+  };
+}
+
 // Escalera de compensación de StartGrows: comisión desde el día 1, fijo solo si se
 // sostiene el resultado. Ver 05_EQUIPO/Estructura_de_Compensacion en el vault.
 export function empLadderTier(clientsThisMonth: number, monthsSustained: number): { label: string; suggestedFixed: number } {

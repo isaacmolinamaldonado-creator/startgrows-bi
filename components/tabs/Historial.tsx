@@ -20,19 +20,25 @@ export default function Historial() {
   const drift = monthDrift(state);
   const now = new Date();
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<{ facturado: number; gastos: number; n: number } | null>(null);
+  const [editDraft, setEditDraft] = useState<{ facturado: number; gastos: number; n: number; month: number; year: number } | null>(null);
 
-  function startEdit(idx: number, h: { facturado: number; gastos: number; n: number }) {
+  function startEdit(idx: number, h: { facturado: number; gastos: number; n: number; month: number; year: number }) {
     setEditingIdx(idx);
-    setEditDraft({ facturado: h.facturado, gastos: h.gastos, n: h.n });
+    setEditDraft({ facturado: h.facturado, gastos: h.gastos, n: h.n, month: h.month, year: h.year });
   }
 
   function saveEdit(idx: number) {
     if (!editDraft) return;
+    const mes = getMonthStr(editDraft.month, editDraft.year, MONTHS);
     setState((prev) => ({
       ...prev,
       historial: prev.historial.map((h, i) => (i === idx
-        ? { ...h, facturado: editDraft.facturado, gastos: editDraft.gastos, n: editDraft.n, rev: editDraft.facturado, cost: editDraft.gastos, ben: editDraft.facturado - editDraft.gastos }
+        ? {
+          ...h,
+          facturado: editDraft.facturado, gastos: editDraft.gastos, n: editDraft.n,
+          rev: editDraft.facturado, cost: editDraft.gastos, ben: editDraft.facturado - editDraft.gastos,
+          month: editDraft.month, year: editDraft.year, mes,
+        }
         : h)),
     }));
     setEditingIdx(null);
@@ -190,6 +196,18 @@ export default function Historial() {
 
             {editingIdx === idx && editDraft ? (
               <div className="ladderbox" style={{ marginTop: 10 }}>
+                <div className="emp-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginBottom: 10 }}>
+                  <div className="emp-field">
+                    <label>Mes</label>
+                    <select className="sel" value={editDraft.month} onChange={(e) => setEditDraft({ ...editDraft, month: +e.target.value })}>
+                      {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div className="emp-field">
+                    <label>Año</label>
+                    <input type="number" className="inp" value={editDraft.year} onChange={(e) => setEditDraft({ ...editDraft, year: +e.target.value })} />
+                  </div>
+                </div>
                 <div className="emp-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
                   <div className="emp-field">
                     <label>Facturado (€)</label>
@@ -205,7 +223,7 @@ export default function Historial() {
                   </div>
                 </div>
                 <div className="suggestbar">
-                  <div className="suggesttext">Beneficio recalculado: <span className="tier">{fmtS(editDraft.facturado - editDraft.gastos)}</span></div>
+                  <div className="suggesttext">Quedará como <strong>{getMonthStr(editDraft.month, editDraft.year, MONTHS)}</strong> · Beneficio recalculado: <span className="tier">{fmtS(editDraft.facturado - editDraft.gastos)}</span></div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="applybtn" onClick={() => saveEdit(idx)}>Guardar corrección</button>
                     <button className="applybtn applied" onClick={() => { setEditingIdx(null); setEditDraft(null); }}>Cancelar</button>
