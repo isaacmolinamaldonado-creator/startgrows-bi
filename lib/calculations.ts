@@ -56,6 +56,7 @@ export interface HistorialResumen {
   totalFacturado: number;
   totalBeneficio: number;
   entradas: number;
+  mesesReales: number;
   promedioFacturado: number;
   promedioBeneficio: number;
   porTipo: {
@@ -66,6 +67,8 @@ export interface HistorialResumen {
   comparativaFin: HistorialComparativa | null;
   mejorMes: HistorialEntry | null;
   peorMes: HistorialEntry | null;
+  rachaMkt: number;
+  rachaFin: number;
 }
 
 function lastTwoByType(historial: HistorialEntry[], type: 'mkt' | 'fin'): HistorialComparativa | null {
@@ -78,11 +81,24 @@ function lastTwoByType(historial: HistorialEntry[], type: 'mkt' | 'fin'): Histor
   return { actual, anterior, deltaPct };
 }
 
+// Meses consecutivos (contando desde el más reciente) donde el beneficio de ese tipo
+// mejoró respecto al mes anterior — racha de crecimiento.
+function growthStreak(historial: HistorialEntry[], type: 'mkt' | 'fin'): number {
+  const filtered = historial.filter((e) => e.type === type); // más reciente primero
+  let streak = 0;
+  for (let i = 0; i < filtered.length - 1; i++) {
+    if (filtered[i].ben > filtered[i + 1].ben) streak++;
+    else break;
+  }
+  return streak;
+}
+
 export function historialResumen(state: AppState): HistorialResumen {
   const h = state.historial;
   const totalFacturado = h.reduce((s, e) => s + (e.facturado || 0), 0);
   const totalBeneficio = h.reduce((s, e) => s + (e.ben || 0), 0);
   const entradas = h.length;
+  const mesesReales = new Set(h.map((e) => `${e.year}-${e.month}`)).size;
 
   const sumaPorTipo = (type: 'mkt' | 'fin') => h.filter((e) => e.type === type).reduce(
     (acc, e) => ({ facturado: acc.facturado + (e.facturado || 0), beneficio: acc.beneficio + (e.ben || 0), n: acc.n + 1 }),
@@ -100,6 +116,7 @@ export function historialResumen(state: AppState): HistorialResumen {
     totalFacturado,
     totalBeneficio,
     entradas,
+    mesesReales,
     promedioFacturado: entradas ? totalFacturado / entradas : 0,
     promedioBeneficio: entradas ? totalBeneficio / entradas : 0,
     porTipo: { mkt: sumaPorTipo('mkt'), fin: sumaPorTipo('fin') },
@@ -107,6 +124,42 @@ export function historialResumen(state: AppState): HistorialResumen {
     comparativaFin: lastTwoByType(h, 'fin'),
     mejorMes,
     peorMes,
+    rachaMkt: growthStreak(h, 'mkt'),
+    rachaFin: growthStreak(h, 'fin'),
+  };
+}
+
+// Proyección del mes en curso (todavía sin cerrar) a fin de mes.
+// Marketing es MRR — su total ya es "el del mes", no se proyecta por día.
+// Financiero es flujo acumulado de cierres — sí se proyecta por avance del mes.
+export interface ProyeccionMesEnCurso {
+  diaActual: number;
+  diasDelMes: number;
+  mktActual: number; // ya es el total mensual, no se multiplica
+  finActual: number;
+  finProyectado: number;
+  totalProyectado: number;
+  benProyectado: number;
+}
+
+export function proyeccionMesEnCurso(state: AppState): ProyeccionMesEnCurso {
+  const now = new Date();
+  const esMesRealActual = now.getMonth() === state.curMonth && now.getFullYear() === state.curYear;
+  const diasDelMes = new Date(state.curYear, state.curMonth + 1, 0).getDate();
+  const diaActual = esMesRealActual ? now.getDate() : diasDelMes;
+  const factor = diasDelMes / Math.max(1, diaActual);
+
+  const mt = mktTotals(state);
+  const ft = finTotals(state);
+  const finProyectado = ft.totalRev * factor;
+  const finCostoProyectado = ft.totalCost * factor;
+  const totalProyectado = mt.totalTp + finProyectado;
+  const costoProyectado = mt.totalCost + finCostoProyectado;
+
+  return {
+    diaActual, diasDelMes,
+    mktActual: mt.totalTp, finActual: ft.totalRev, finProyectado,
+    totalProyectado, benProyectado: totalProyectado - costoProyectado,
   };
 }
 

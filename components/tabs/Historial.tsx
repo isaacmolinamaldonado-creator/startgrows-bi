@@ -8,7 +8,7 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import {
   fmt, fmtS, colorClass, margen, mktTotals, finTotals,
-  getMonthStr, nextMonthYear, monthDrift, historialResumen,
+  getMonthStr, nextMonthYear, monthDrift, historialResumen, proyeccionMesEnCurso,
 } from '@/lib/calculations';
 import { MONTHS } from '@/lib/defaultState';
 
@@ -18,6 +18,7 @@ export default function Historial() {
   const { state, setState } = useAppStore();
   const resumen = historialResumen(state);
   const drift = monthDrift(state);
+  const proyeccion = proyeccionMesEnCurso(state);
   const now = new Date();
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<{ facturado: number; gastos: number; n: number; month: number; year: number } | null>(null);
@@ -88,17 +89,24 @@ export default function Historial() {
     alert(`✅ ${mes} cerrado y archivado. El sistema pasa a ${mesSiguiente}. Financiero reiniciado.`);
   }
 
-  const all = [...state.historial].reverse();
+  // Meses reales distintos, ordenados cronológicamente — un mes = una etiqueta,
+  // con Marketing y Financiero como barras agrupadas (en vez de un bloque por cierre,
+  // que mostraba el mismo mes duplicado cuando ambos servicios cierran por separado).
+  const monthKeys = Array.from(new Set(state.historial.map((e) => `${e.year}-${e.month}`))).sort((a, b) => {
+    const [ay, am] = a.split('-').map(Number);
+    const [by, bm] = b.split('-').map(Number);
+    return (ay * 12 + am) - (by * 12 + bm);
+  });
+  const mktByMonth = new Map(state.historial.filter((e) => e.type === 'mkt').map((e) => [`${e.year}-${e.month}`, e]));
+  const finByMonth = new Map(state.historial.filter((e) => e.type === 'fin').map((e) => [`${e.year}-${e.month}`, e]));
   const chartData = {
-    labels: all.map((h) => h.mes.slice(0, 3) + ' ' + h.year + (h.type === 'mkt' ? ' 🎯' : ' 💰')),
+    labels: monthKeys.map((k) => {
+      const [y, m] = k.split('-').map(Number);
+      return MONTHS[m].slice(0, 3) + ' ' + y;
+    }),
     datasets: [
-      { label: 'Facturado', data: all.map((h) => h.rev || 0), backgroundColor: 'rgba(99,102,241,.6)', borderColor: '#6366F1', borderWidth: 1, borderRadius: 4 },
-      {
-        label: 'Beneficio', data: all.map((h) => h.ben || 0),
-        backgroundColor: all.map((h) => (h.ben >= 0 ? 'rgba(16,185,129,.6)' : 'rgba(239,68,68,.6)')),
-        borderColor: all.map((h) => (h.ben >= 0 ? '#10B981' : '#EF4444')),
-        borderWidth: 1, borderRadius: 4,
-      },
+      { label: 'Marketing', data: monthKeys.map((k) => mktByMonth.get(k)?.ben ?? null), backgroundColor: 'rgba(99,102,241,.7)', borderColor: '#6366F1', borderWidth: 1, borderRadius: 4 },
+      { label: 'Financiero', data: monthKeys.map((k) => finByMonth.get(k)?.ben ?? null), backgroundColor: 'rgba(16,185,129,.7)', borderColor: '#10B981', borderWidth: 1, borderRadius: 4 },
     ],
   };
   const chartOptions = {
@@ -136,12 +144,26 @@ export default function Historial() {
         </div>
       )}
 
+      <div className="card" style={{ marginBottom: 16, background: 'linear-gradient(135deg, var(--card2), var(--card))', border: '1px solid var(--border2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+          <div className="ctitle" style={{ margin: 0 }}>🔮 {MONTHS[state.curMonth]} {state.curYear} — mes en curso (proyectado a fin de mes)</div>
+          <span style={{ fontSize: 10, color: 'var(--muted)' }}>Día {proyeccion.diaActual} de {proyeccion.diasDelMes}</span>
+        </div>
+        <div className="emp-kpi-strip" style={{ borderTop: 'none', paddingTop: 0 }}>
+          <div className="emp-kpi"><div className="ev vx">{fmt(proyeccion.mktActual)}</div><div className="el">Marketing (MRR, ya es el del mes)</div></div>
+          <div className="emp-kpi"><div className="ev vg">{fmt(proyeccion.finActual)}</div><div className="el">Financiero acumulado hoy</div></div>
+          <div className="emp-kpi"><div className="ev vm">{fmt(proyeccion.finProyectado)}</div><div className="el">Financiero proyectado a fin de mes</div></div>
+          <div className="emp-kpi"><div className={`ev ${colorClass(proyeccion.benProyectado)}`}>{fmtS(proyeccion.benProyectado)}</div><div className="el">Beneficio total proyectado</div></div>
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>La proyección solo estira Financiero (flujo de cierres que se acumula día a día) — Marketing ya es un total mensual (MRR), no se multiplica por avance del mes.</p>
+      </div>
+
       {resumen.entradas > 0 && (
         <div className="g5" style={{ marginBottom: 16 }}>
-          <div className="mc accent"><div className="mlbl">Facturado histórico</div><div className="mval accent">{fmt(resumen.totalFacturado)}</div><div className="msub">{resumen.entradas} meses cerrados</div></div>
-          <div className={`mc ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}><div className="mlbl">Beneficio histórico</div><div className={`mval ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}>{fmtS(resumen.totalBeneficio)}</div><div className="msub">Promedio {fmt(resumen.promedioBeneficio)}/mes</div></div>
-          <div className="mc blue"><div className="mlbl">Marketing (retainers)</div><div className="mval blue">{fmt(resumen.porTipo.mkt.facturado)}</div><div className="msub">{resumen.porTipo.mkt.n} meses archivados</div></div>
-          <div className="mc amber"><div className="mlbl">Financiero (broker)</div><div className="mval amber">{fmt(resumen.porTipo.fin.facturado)}</div><div className="msub">{resumen.porTipo.fin.n} meses cerrados</div></div>
+          <div className="mc accent"><div className="mlbl">Facturado histórico</div><div className="mval accent">{fmt(resumen.totalFacturado)}</div><div className="msub">{resumen.mesesReales} {resumen.mesesReales === 1 ? 'mes real' : 'meses reales'} · {resumen.entradas} cierres</div></div>
+          <div className={`mc ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}><div className="mlbl">Beneficio histórico</div><div className={`mval ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}>{fmtS(resumen.totalBeneficio)}</div><div className="msub">Promedio {fmt(resumen.promedioBeneficio)}/cierre</div></div>
+          <div className="mc blue"><div className="mlbl">Marketing (retainers)</div><div className="mval blue">{fmt(resumen.porTipo.mkt.facturado)}</div><div className="msub">{resumen.porTipo.mkt.n} archivados{resumen.rachaMkt > 0 ? ` · 🔥 racha ${resumen.rachaMkt}` : ''}</div></div>
+          <div className="mc amber"><div className="mlbl">Financiero (broker)</div><div className="mval amber">{fmt(resumen.porTipo.fin.facturado)}</div><div className="msub">{resumen.porTipo.fin.n} cerrados{resumen.rachaFin > 0 ? ` · 🔥 racha ${resumen.rachaFin}` : ''}</div></div>
           {resumen.mejorMes && (
             <div className="mc green"><div className="mlbl">Mejor mes</div><div className="mval green">{fmtS(resumen.mejorMes.ben)}</div><div className="msub">{resumen.mejorMes.mes} ({resumen.mejorMes.type === 'mkt' ? 'Mkt' : 'Fin'})</div></div>
           )}
@@ -169,9 +191,9 @@ export default function Historial() {
         </div>
       )}
 
-      {all.length > 0 && (
+      {monthKeys.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <div className="ctitle">📈 Evolución mensual — Ingresos vs Beneficio</div>
+          <div className="ctitle">📈 Beneficio por mes real — Marketing vs Financiero</div>
           <div className="chart-wrap"><Bar data={chartData} options={chartOptions} /></div>
         </div>
       )}
