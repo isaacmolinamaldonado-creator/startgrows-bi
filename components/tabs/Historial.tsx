@@ -5,17 +5,24 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend,
 } from 'chart.js';
 import { useAppStore } from '@/store/useAppStore';
-import { fmt, fmtS, colorClass, margen, mktTotals, finTotals } from '@/lib/calculations';
+import {
+  fmt, fmtS, colorClass, margen, mktTotals, finTotals,
+  getMonthStr, nextMonthYear, monthDrift, historialResumen,
+} from '@/lib/calculations';
+import { MONTHS } from '@/lib/defaultState';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function Historial() {
   const { state, setState } = useAppStore();
+  const resumen = historialResumen(state);
+  const drift = monthDrift(state);
+  const now = new Date();
 
   function cerrarMesMkt() {
-    if (!confirm('¿Cerrar mes Marketing actual?')) return;
+    const mes = getMonthStr(state.curMonth, state.curYear, MONTHS);
+    if (!confirm(`Vas a archivar ${mes} de Marketing. Los clientes recurrentes se mantienen activos (no se borran, solo queda el snapshot del mes en el histórico).\n\n¿Confirmar?`)) return;
     const t = mktTotals(state);
-    const mes = `${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][state.curMonth]} ${state.curYear}`;
     setState((prev) => ({
       ...prev,
       mkt_historial: [
@@ -27,30 +34,27 @@ export default function Historial() {
         ...prev.historial,
       ],
     }));
-    alert('✅ Mes Marketing archivado.');
+    alert(`✅ ${mes} de Marketing archivado.`);
   }
 
   function cerrarMes() {
-    if (!confirm('¿Cerrar mes Financiero actual?')) return;
+    const mes = getMonthStr(state.curMonth, state.curYear, MONTHS);
+    const { month: nm, year: ny } = nextMonthYear(state.curMonth, state.curYear);
+    const mesSiguiente = getMonthStr(nm, ny, MONTHS);
+    if (!confirm(`Vas a cerrar ${mes}.\n\nDesde ahora el sistema va a registrar todo como ${mesSiguiente} — aunque estés haciendo este cierre más tarde (ej. el día 1), lo que ya cargaste como "actual" quedará archivado como ${mes}, no como ${mesSiguiente}.\n\n¿Confirmar cierre de ${mes}?`)) return;
     const t = finTotals(state);
-    const mes = `${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][state.curMonth]} ${state.curYear}`;
-    setState((prev) => {
-      let nextMonth = prev.curMonth + 1;
-      let nextYear = prev.curYear;
-      if (nextMonth > 11) { nextMonth = 0; nextYear += 1; }
-      return {
-        ...prev,
-        historial: [
-          { mes, month: prev.curMonth, year: prev.curYear, type: 'fin', rev: t.totalRev, cost: t.totalCost, ben: t.ben, n: t.n, facturado: t.totalRev, gastos: t.totalCost, clients: JSON.parse(JSON.stringify(prev.fin_clients)) },
-          ...prev.historial,
-        ],
-        fin_clients: [],
-        nextFinId: 10,
-        curMonth: nextMonth,
-        curYear: nextYear,
-      };
-    });
-    alert('✅ Mes Financiero cerrado. Financiero reiniciado.');
+    setState((prev) => ({
+      ...prev,
+      historial: [
+        { mes, month: prev.curMonth, year: prev.curYear, type: 'fin', rev: t.totalRev, cost: t.totalCost, ben: t.ben, n: t.n, facturado: t.totalRev, gastos: t.totalCost, clients: JSON.parse(JSON.stringify(prev.fin_clients)) },
+        ...prev.historial,
+      ],
+      fin_clients: [],
+      nextFinId: 10,
+      curMonth: nm,
+      curYear: ny,
+    }));
+    alert(`✅ ${mes} cerrado y archivado. El sistema pasa a ${mesSiguiente}. Financiero reiniciado.`);
   }
 
   const all = [...state.historial].reverse();
@@ -94,6 +98,45 @@ export default function Historial() {
           <button className="cmb" onClick={cerrarMes}>💰 Cerrar mes Fin</button>
         </div>
       </div>
+
+      {drift > 0 && (
+        <div className="ibox danger" style={{ marginBottom: 16 }}>
+          ⚠ El sistema sigue marcando <strong>{MONTHS[state.curMonth]} {state.curYear}</strong> como mes actual, pero hoy es <strong>{MONTHS[now.getMonth()]} {now.getFullYear()}</strong>. Cierra el mes Financiero ({drift} {drift === 1 ? 'mes de atraso' : 'meses de atraso'}) para que todo lo nuevo se cuente en el mes correcto.
+        </div>
+      )}
+
+      {resumen.entradas > 0 && (
+        <div className="g5" style={{ marginBottom: 16 }}>
+          <div className="mc accent"><div className="mlbl">Facturado histórico</div><div className="mval accent">{fmt(resumen.totalFacturado)}</div><div className="msub">{resumen.entradas} meses cerrados</div></div>
+          <div className={`mc ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}><div className="mlbl">Beneficio histórico</div><div className={`mval ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}>{fmtS(resumen.totalBeneficio)}</div><div className="msub">Promedio {fmt(resumen.promedioBeneficio)}/mes</div></div>
+          <div className="mc blue"><div className="mlbl">Marketing (retainers)</div><div className="mval blue">{fmt(resumen.porTipo.mkt.facturado)}</div><div className="msub">{resumen.porTipo.mkt.n} meses archivados</div></div>
+          <div className="mc amber"><div className="mlbl">Financiero (broker)</div><div className="mval amber">{fmt(resumen.porTipo.fin.facturado)}</div><div className="msub">{resumen.porTipo.fin.n} meses cerrados</div></div>
+          {resumen.mejorMes && (
+            <div className="mc green"><div className="mlbl">Mejor mes</div><div className="mval green">{fmtS(resumen.mejorMes.ben)}</div><div className="msub">{resumen.mejorMes.mes} ({resumen.mejorMes.type === 'mkt' ? 'Mkt' : 'Fin'})</div></div>
+          )}
+        </div>
+      )}
+
+      {(resumen.comparativaMkt?.anterior || resumen.comparativaFin?.anterior) && (
+        <div className="g2" style={{ marginBottom: 16 }}>
+          {resumen.comparativaMkt?.anterior && (
+            <div className="ibox">
+              🎯 <strong>Marketing</strong> — {resumen.comparativaMkt.actual.mes}: {fmtS(resumen.comparativaMkt.actual.ben)} de beneficio, vs {fmtS(resumen.comparativaMkt.anterior.ben)} en {resumen.comparativaMkt.anterior.mes}
+              {resumen.comparativaMkt.deltaPct !== null && (
+                <> → <span className={colorClass(resumen.comparativaMkt.deltaPct)}>{resumen.comparativaMkt.deltaPct >= 0 ? '+' : ''}{resumen.comparativaMkt.deltaPct.toFixed(1)}%</span></>
+              )}
+            </div>
+          )}
+          {resumen.comparativaFin?.anterior && (
+            <div className="ibox">
+              💰 <strong>Financiero</strong> — {resumen.comparativaFin.actual.mes}: {fmtS(resumen.comparativaFin.actual.ben)} de beneficio, vs {fmtS(resumen.comparativaFin.anterior.ben)} en {resumen.comparativaFin.anterior.mes}
+              {resumen.comparativaFin.deltaPct !== null && (
+                <> → <span className={colorClass(resumen.comparativaFin.deltaPct)}>{resumen.comparativaFin.deltaPct >= 0 ? '+' : ''}{resumen.comparativaFin.deltaPct.toFixed(1)}%</span></>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {all.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>

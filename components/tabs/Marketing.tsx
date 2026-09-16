@@ -3,9 +3,10 @@
 import { useAppStore } from '@/store/useAppStore';
 import { MktClient, CostItem } from '@/lib/types';
 import {
-  fmt, fmtS, colorClass, margen,
+  fmt, fmtS, colorClass, margen, getMonthStr,
   mktFixedTotal, mktVarTotal, mktClientCalc, mktTotals,
 } from '@/lib/calculations';
+import { MONTHS } from '@/lib/defaultState';
 import { canalPill, getAlert } from '@/components/shared';
 
 export default function Marketing() {
@@ -93,9 +94,9 @@ export default function Marketing() {
   }
 
   function cerrarMesMkt() {
-    if (!confirm('¿Cerrar mes Marketing actual?')) return;
+    const mes = getMonthStr(state.curMonth, state.curYear, MONTHS);
+    if (!confirm(`Vas a archivar ${mes} de Marketing. Los clientes recurrentes se mantienen activos (no se borran, solo queda el snapshot del mes en el histórico).\n\n¿Confirmar?`)) return;
     const t = mktTotals(state);
-    const mes = `${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][state.curMonth]} ${state.curYear}`;
     setState((prev) => ({
       ...prev,
       mkt_historial: [

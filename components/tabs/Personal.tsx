@@ -3,6 +3,7 @@
 import { useAppStore } from '@/store/useAppStore';
 import {
   fmt, mktTotals, finTotals, empMonthlySalary, empTotalPaidLifetime,
+  empCommissionCountThisMonth, empLadderTier,
 } from '@/lib/calculations';
 import EmployeeCard from '@/components/personal/EmployeeCard';
 import JobsList from '@/components/personal/JobsList';
@@ -19,6 +20,7 @@ export default function Personal() {
         {
           id: prev.nextEmpId, name: '', role: prev.roles[0], country: 'España', phone: '', email: '',
           fixedSalary: 0, bonus: 0, startDate: new Date().toISOString().slice(0, 10), workload: 50, active: true,
+          roleDescription: '', monthsSustained: 0,
         },
       ],
       nextEmpId: prev.nextEmpId + 1,
@@ -50,6 +52,12 @@ export default function Personal() {
 
   const totalHistoricoPagado = state.employees.reduce((s, e) => s + empTotalPaidLifetime(state, e), 0);
   const totalComisionesPagadas = state.commissions.reduce((s, c) => s + c.commissionAmount, 0);
+
+  const tierCounts: Record<string, number> = {};
+  state.employees.filter((e) => e.active).forEach((e) => {
+    const tier = empLadderTier(empCommissionCountThisMonth(state, e.id), e.monthsSustained || 0);
+    tierCounts[tier.label] = (tierCounts[tier.label] || 0) + 1;
+  });
 
   return (
     <div>
@@ -90,6 +98,13 @@ export default function Personal() {
             <div className="ibox" style={{ marginTop: 8 }}>
               Comisiones reales registradas hasta ahora: <strong>{fmt(totalComisionesPagadas)}</strong>
             </div>
+            {Object.keys(tierCounts).length > 0 && (
+              <div className="ibox" style={{ marginTop: 8 }}>
+                Escalera de compensación: {Object.entries(tierCounts).map(([label, count], i) => (
+                  <span key={label}>{i > 0 && ' · '}<strong>{count}</strong> en &quot;{label}&quot;</span>
+                ))}
+              </div>
+            )}
           </div>
 
           <MeetingsList />

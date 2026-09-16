@@ -68,6 +68,8 @@ export interface Employee {
   startDate: string;
   workload: number; // 0-150 %
   active: boolean;
+  roleDescription?: string;   // qué va a hacer esta persona en concreto — texto libre
+  monthsSustained?: number;   // meses consecutivos sosteniendo 3-4+ clientes, para la escalera
 }
 
 export interface Job {

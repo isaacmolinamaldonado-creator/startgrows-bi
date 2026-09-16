@@ -5,7 +5,8 @@ import { useAppStore } from '@/store/useAppStore';
 import { Employee, Commission } from '@/lib/types';
 import {
   fmt, fmtS, colorClass, empInitials, empMonthlySalary, empMonthsActive,
-  empCommissionsTotal, empTotalPaidLifetime, empClientsClosedCount, empRevenueGenerated, empROI,
+  empCommissionsTotal, empCommissionsThisMonth, empTotalPaidLifetime, empClientsClosedCount, empRevenueGenerated, empROI,
+  empCommissionCountThisMonth, empLadderTier,
 } from '@/lib/calculations';
 import { COUNTRIES } from '@/lib/defaultState';
 import CommissionModal from './CommissionModal';
@@ -50,6 +51,12 @@ export default function EmployeeCard({ employee }: EmployeeCardProps) {
   const clientsCount = empClientsClosedCount(state, employee.id);
   const revenueGenerated = empRevenueGenerated(state, employee.id);
   const roi = empROI(state, employee);
+
+  const clientsThisMonth = empCommissionCountThisMonth(state, employee.id);
+  const monthsSustained = employee.monthsSustained || 0;
+  const tier = empLadderTier(clientsThisMonth, monthsSustained);
+  const suggestionDiffers = tier.suggestedFixed !== (employee.fixedSalary || 0);
+  const empCommissionsThisMonthAmt = empCommissionsThisMonth(state, employee.id);
 
   return (
     <div className="emp-card">
@@ -112,6 +119,39 @@ export default function EmployeeCard({ employee }: EmployeeCardProps) {
             <button className={`tog ${employee.active ? 'on' : ''}`} onClick={() => updateEmployee({ active: !employee.active })}></button>
             <label style={{ fontSize: 11, color: 'var(--muted2)' }}>Activo en el equipo</label>
           </div>
+        </div>
+        <div className="emp-field full">
+          <label>Qué va a hacer esta persona</label>
+          <textarea
+            className="roledesc-textarea"
+            value={employee.roleDescription || ''}
+            placeholder="Ej: prospección en frío, agenda sesiones, deja nota en GHL tras cada llamada..."
+            onChange={(e) => updateEmployee({ roleDescription: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <div className="ladderbox" style={{ marginBottom: 12 }}>
+        <div className="ladderrow"><span>Clientes cerrados este mes</span><span className="cur">{clientsThisMonth}</span></div>
+        <div className="ladderrow">
+          <span>Meses consecutivos sosteniendo 3-4+ clientes</span>
+          <input
+            type="number" min={0} className="cur"
+            style={{ background: 'transparent', border: 'none', width: 40, textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-jetbrains-mono)', fontWeight: 600 }}
+            value={monthsSustained}
+            onChange={(e) => updateEmployee({ monthsSustained: +e.target.value })}
+          />
+        </div>
+        <div className="ladderrow"><span>Comisión acumulada este mes</span><span className="cur">{fmt(empCommissionsThisMonthAmt)}</span></div>
+        <div className="suggestbar">
+          <div className="suggesttext">La escalera sugiere: <span className="tier">{tier.label}</span></div>
+          <button
+            className={`applybtn ${!suggestionDiffers ? 'applied' : ''}`}
+            disabled={!suggestionDiffers}
+            onClick={() => updateEmployee({ fixedSalary: tier.suggestedFixed })}
+          >
+            {suggestionDiffers ? `Aplicar €${tier.suggestedFixed} al fijo` : 'Ya aplicado'}
+          </button>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { AppState, MktClient, FinClient, Canal, Employee } from './types';
+import { AppState, MktClient, FinClient, Canal, Employee, HistorialEntry } from './types';
 
 // ============================================================
 // FORMATEO
@@ -25,6 +25,89 @@ export function margen(ben: number, ing: number): string {
 
 export function getMonthStr(month: number, year: number, MONTHS: string[]): string {
   return MONTHS[month] + ' ' + year;
+}
+
+// Mes/año siguiente al dado, con el rollover de diciembre a enero.
+export function nextMonthYear(month: number, year: number): { month: number; year: number } {
+  let m = month + 1;
+  let y = year;
+  if (m > 11) { m = 0; y += 1; }
+  return { month: m, year: y };
+}
+
+// Meses de diferencia entre el mes/año real (calendario del dispositivo) y el mes/año
+// que el sistema tiene como "actual" (state.curMonth/curYear, que solo avanza cuando
+// se cierra el mes Financiero a mano). Positivo = el sistema quedó atrasado.
+export function monthDrift(state: AppState): number {
+  const now = new Date();
+  return (now.getFullYear() - state.curYear) * 12 + (now.getMonth() - state.curMonth);
+}
+
+// ============================================================
+// HISTORIAL — resumen, comparativas mes a mes
+// ============================================================
+export interface HistorialComparativa {
+  actual: HistorialEntry;
+  anterior: HistorialEntry | null;
+  deltaPct: number | null;
+}
+
+export interface HistorialResumen {
+  totalFacturado: number;
+  totalBeneficio: number;
+  entradas: number;
+  promedioFacturado: number;
+  promedioBeneficio: number;
+  porTipo: {
+    mkt: { facturado: number; beneficio: number; n: number };
+    fin: { facturado: number; beneficio: number; n: number };
+  };
+  comparativaMkt: HistorialComparativa | null;
+  comparativaFin: HistorialComparativa | null;
+  mejorMes: HistorialEntry | null;
+  peorMes: HistorialEntry | null;
+}
+
+function lastTwoByType(historial: HistorialEntry[], type: 'mkt' | 'fin'): HistorialComparativa | null {
+  // state.historial viene del más reciente al más antiguo (cada cierre se inserta al inicio)
+  const filtered = historial.filter((e) => e.type === type);
+  if (filtered.length === 0) return null;
+  const actual = filtered[0];
+  const anterior = filtered[1] || null;
+  const deltaPct = anterior && anterior.ben !== 0 ? ((actual.ben - anterior.ben) / Math.abs(anterior.ben)) * 100 : null;
+  return { actual, anterior, deltaPct };
+}
+
+export function historialResumen(state: AppState): HistorialResumen {
+  const h = state.historial;
+  const totalFacturado = h.reduce((s, e) => s + (e.facturado || 0), 0);
+  const totalBeneficio = h.reduce((s, e) => s + (e.ben || 0), 0);
+  const entradas = h.length;
+
+  const sumaPorTipo = (type: 'mkt' | 'fin') => h.filter((e) => e.type === type).reduce(
+    (acc, e) => ({ facturado: acc.facturado + (e.facturado || 0), beneficio: acc.beneficio + (e.ben || 0), n: acc.n + 1 }),
+    { facturado: 0, beneficio: 0, n: 0 },
+  );
+
+  let mejorMes: HistorialEntry | null = null;
+  let peorMes: HistorialEntry | null = null;
+  h.forEach((e) => {
+    if (!mejorMes || e.ben > mejorMes.ben) mejorMes = e;
+    if (!peorMes || e.ben < peorMes.ben) peorMes = e;
+  });
+
+  return {
+    totalFacturado,
+    totalBeneficio,
+    entradas,
+    promedioFacturado: entradas ? totalFacturado / entradas : 0,
+    promedioBeneficio: entradas ? totalBeneficio / entradas : 0,
+    porTipo: { mkt: sumaPorTipo('mkt'), fin: sumaPorTipo('fin') },
+    comparativaMkt: lastTwoByType(h, 'mkt'),
+    comparativaFin: lastTwoByType(h, 'fin'),
+    mejorMes,
+    peorMes,
+  };
 }
 
 // ============================================================
@@ -175,6 +258,25 @@ export function empCommissionsThisMonth(state: AppState, employeeId: number): nu
       return d.getMonth() === state.curMonth && d.getFullYear() === state.curYear;
     })
     .reduce((s, c) => s + (c.commissionAmount || 0), 0);
+}
+
+// Número de comisiones (≈ clientes) registradas a un empleado en el mes/año actual —
+// se usa como proxy de "clientes cerrados este mes" para la escalera de compensación,
+// porque los clientes en sí (MktClient/FinClient) no llevan fecha propia de cierre.
+export function empCommissionCountThisMonth(state: AppState, employeeId: number): number {
+  return state.commissions.filter((c) => {
+    if (c.employeeId !== employeeId) return false;
+    const d = new Date(c.date);
+    return d.getMonth() === state.curMonth && d.getFullYear() === state.curYear;
+  }).length;
+}
+
+// Escalera de compensación de StartGrows: comisión desde el día 1, fijo solo si se
+// sostiene el resultado. Ver 05_EQUIPO/Estructura_de_Compensacion en el vault.
+export function empLadderTier(clientsThisMonth: number, monthsSustained: number): { label: string; suggestedFixed: number } {
+  if (clientsThisMonth < 3) return { label: 'Solo comisión — sin fijo todavía', suggestedFixed: 0 };
+  if (monthsSustained < 2) return { label: 'Fijo nivel 1 — recién activado', suggestedFixed: 75 };
+  return { label: 'Fijo nivel 2 — resultado sostenido', suggestedFixed: 150 };
 }
 
 // Total pagado a un empleado (salarios acumulados estimados + comisiones reales)

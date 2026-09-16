@@ -3,9 +3,10 @@
 import { useAppStore } from '@/store/useAppStore';
 import { FinClient, CostItem } from '@/lib/types';
 import {
-  fmt, fmtS, colorClass, margen,
+  fmt, fmtS, colorClass, margen, getMonthStr, nextMonthYear,
   finFixedTotal, finClientCalc, finTotals,
 } from '@/lib/calculations';
+import { MONTHS } from '@/lib/defaultState';
 import { finCanalPill, getAlert } from '@/components/shared';
 
 export default function Financiero() {
@@ -110,31 +111,28 @@ export default function Financiero() {
   }
 
   function cerrarMes() {
-    if (!confirm('¿Cerrar mes Financiero actual?')) return;
+    const mes = getMonthStr(state.curMonth, state.curYear, MONTHS);
+    const { month: nm, year: ny } = nextMonthYear(state.curMonth, state.curYear);
+    const mesSiguiente = getMonthStr(nm, ny, MONTHS);
+    if (!confirm(`Vas a cerrar ${mes}.\n\nDesde ahora el sistema va a registrar todo como ${mesSiguiente} — aunque estés haciendo este cierre más tarde (ej. el día 1), lo que ya cargaste como "actual" quedará archivado como ${mes}, no como ${mesSiguiente}.\n\n¿Confirmar cierre de ${mes}?`)) return;
     const t = finTotals(state);
-    const mes = `${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][state.curMonth]} ${state.curYear}`;
-    setState((prev) => {
-      let nextMonth = prev.curMonth + 1;
-      let nextYear = prev.curYear;
-      if (nextMonth > 11) { nextMonth = 0; nextYear += 1; }
-      return {
-        ...prev,
-        historial: [
-          {
-            mes, month: prev.curMonth, year: prev.curYear, type: 'fin',
-            rev: t.totalRev, cost: t.totalCost, ben: t.ben, n: t.n,
-            facturado: t.totalRev, gastos: t.totalCost,
-            clients: JSON.parse(JSON.stringify(prev.fin_clients)),
-          },
-          ...prev.historial,
-        ],
-        fin_clients: [],
-        nextFinId: 10,
-        curMonth: nextMonth,
-        curYear: nextYear,
-      };
-    });
-    alert('✅ Mes Financiero cerrado. Financiero reiniciado.');
+    setState((prev) => ({
+      ...prev,
+      historial: [
+        {
+          mes, month: prev.curMonth, year: prev.curYear, type: 'fin',
+          rev: t.totalRev, cost: t.totalCost, ben: t.ben, n: t.n,
+          facturado: t.totalRev, gastos: t.totalCost,
+          clients: JSON.parse(JSON.stringify(prev.fin_clients)),
+        },
+        ...prev.historial,
+      ],
+      fin_clients: [],
+      nextFinId: 10,
+      curMonth: nm,
+      curYear: ny,
+    }));
+    alert(`✅ ${mes} cerrado y archivado. El sistema pasa a ${mesSiguiente}. Financiero reiniciado.`);
   }
 
   const avgT = state.fin_clients.length
