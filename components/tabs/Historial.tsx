@@ -99,6 +99,23 @@ export default function Historial() {
   });
   const mktByMonth = new Map(state.historial.filter((e) => e.type === 'mkt').map((e) => [`${e.year}-${e.month}`, e]));
   const finByMonth = new Map(state.historial.filter((e) => e.type === 'fin').map((e) => [`${e.year}-${e.month}`, e]));
+
+  // Tabla comparativa mes a mes (análisis avanzado, desplegable)
+  const tablaMeses = monthKeys.map((k, i) => {
+    const [y, m] = k.split('-').map(Number);
+    const mkt = mktByMonth.get(k);
+    const fin = finByMonth.get(k);
+    const facturadoTotal = (mkt?.facturado || 0) + (fin?.facturado || 0);
+    const gastosTotal = (mkt?.gastos || 0) + (fin?.gastos || 0);
+    const benTotal = (mkt?.ben || 0) + (fin?.ben || 0);
+    const prevKey = monthKeys[i - 1];
+    let deltaPct: number | null = null;
+    if (prevKey) {
+      const prevBen = (mktByMonth.get(prevKey)?.ben || 0) + (finByMonth.get(prevKey)?.ben || 0);
+      deltaPct = prevBen !== 0 ? ((benTotal - prevBen) / Math.abs(prevBen)) * 100 : null;
+    }
+    return { label: `${MONTHS[m]} ${y}`, mkt, fin, facturadoTotal, gastosTotal, benTotal, deltaPct };
+  }).reverse(); // más reciente primero
   const chartData = {
     labels: monthKeys.map((k) => {
       const [y, m] = k.split('-').map(Number);
@@ -161,7 +178,7 @@ export default function Historial() {
       {resumen.entradas > 0 && (
         <div className="g5" style={{ marginBottom: 16 }}>
           <div className="mc accent"><div className="mlbl">Facturado histórico</div><div className="mval accent">{fmt(resumen.totalFacturado)}</div><div className="msub">{resumen.mesesReales} {resumen.mesesReales === 1 ? 'mes real' : 'meses reales'} · {resumen.entradas} cierres</div></div>
-          <div className={`mc ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}><div className="mlbl">Beneficio histórico</div><div className={`mval ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}>{fmtS(resumen.totalBeneficio)}</div><div className="msub">Promedio {fmt(resumen.promedioBeneficio)}/cierre</div></div>
+          <div className={`mc ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}><div className="mlbl">Beneficio histórico</div><div className={`mval ${resumen.totalBeneficio >= 0 ? 'green' : 'red'}`}>{fmtS(resumen.totalBeneficio)}</div><div className="msub">Promedio {fmt(resumen.promedioBeneficio)}/mes real</div></div>
           <div className="mc blue"><div className="mlbl">Marketing (retainers)</div><div className="mval blue">{fmt(resumen.porTipo.mkt.facturado)}</div><div className="msub">{resumen.porTipo.mkt.n} archivados{resumen.rachaMkt > 0 ? ` · 🔥 racha ${resumen.rachaMkt}` : ''}</div></div>
           <div className="mc amber"><div className="mlbl">Financiero (broker)</div><div className="mval amber">{fmt(resumen.porTipo.fin.facturado)}</div><div className="msub">{resumen.porTipo.fin.n} cerrados{resumen.rachaFin > 0 ? ` · 🔥 racha ${resumen.rachaFin}` : ''}</div></div>
           {resumen.mejorMes && (
@@ -196,6 +213,34 @@ export default function Historial() {
           <div className="ctitle">📈 Beneficio por mes real — Marketing vs Financiero</div>
           <div className="chart-wrap"><Bar data={chartData} options={chartOptions} /></div>
         </div>
+      )}
+
+      {tablaMeses.length > 0 && (
+        <details className="card" style={{ marginBottom: 16 }}>
+          <summary style={{ cursor: 'pointer' }}><span className="ctitle" style={{ display: 'inline' }}>📊 Análisis avanzado — tabla comparativa mes a mes</span></summary>
+          <div className="tscroll" style={{ marginTop: 12 }}>
+            <table className="stbl">
+              <thead>
+                <tr><th>Mes</th><th>Facturado Mkt</th><th>Beneficio Mkt</th><th>Facturado Fin</th><th>Beneficio Fin</th><th>Beneficio total</th><th>Margen</th><th>vs. mes anterior</th></tr>
+              </thead>
+              <tbody>
+                {tablaMeses.map((row) => (
+                  <tr key={row.label}>
+                    <td>{row.label}</td>
+                    <td className="vx">{row.mkt ? fmt(row.mkt.facturado) : '—'}</td>
+                    <td className={row.mkt ? colorClass(row.mkt.ben) : ''}>{row.mkt ? fmtS(row.mkt.ben) : '—'}</td>
+                    <td className="vg">{row.fin ? fmt(row.fin.facturado) : '—'}</td>
+                    <td className={row.fin ? colorClass(row.fin.ben) : ''}>{row.fin ? fmtS(row.fin.ben) : '—'}</td>
+                    <td className={colorClass(row.benTotal)} style={{ fontWeight: 700 }}>{fmtS(row.benTotal)}</td>
+                    <td className="vm">{margen(row.benTotal, row.facturadoTotal)}</td>
+                    <td>{row.deltaPct !== null ? <span className={colorClass(row.deltaPct)}>{row.deltaPct >= 0 ? '+' : ''}{row.deltaPct.toFixed(1)}%</span> : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>"—" significa que ese servicio no cerró/archivó nada ese mes real, no que fue cero.</p>
+        </details>
       )}
 
       {state.historial.length === 0 ? (
