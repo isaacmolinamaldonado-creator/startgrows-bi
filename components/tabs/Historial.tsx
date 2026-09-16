@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend,
@@ -18,6 +19,30 @@ export default function Historial() {
   const resumen = historialResumen(state);
   const drift = monthDrift(state);
   const now = new Date();
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState<{ facturado: number; gastos: number; n: number } | null>(null);
+
+  function startEdit(idx: number, h: { facturado: number; gastos: number; n: number }) {
+    setEditingIdx(idx);
+    setEditDraft({ facturado: h.facturado, gastos: h.gastos, n: h.n });
+  }
+
+  function saveEdit(idx: number) {
+    if (!editDraft) return;
+    setState((prev) => ({
+      ...prev,
+      historial: prev.historial.map((h, i) => (i === idx
+        ? { ...h, facturado: editDraft.facturado, gastos: editDraft.gastos, n: editDraft.n, rev: editDraft.facturado, cost: editDraft.gastos, ben: editDraft.facturado - editDraft.gastos }
+        : h)),
+    }));
+    setEditingIdx(null);
+    setEditDraft(null);
+  }
+
+  function deleteHistorialEntry(idx: number, mes: string) {
+    if (!confirm(`¿Eliminar ${mes} del histórico? Esta acción no se puede deshacer.`)) return;
+    setState((prev) => ({ ...prev, historial: prev.historial.filter((_, i) => i !== idx) }));
+  }
 
   function cerrarMesMkt() {
     const mes = getMonthStr(state.curMonth, state.curYear, MONTHS);
@@ -121,17 +146,17 @@ export default function Historial() {
         <div className="g2" style={{ marginBottom: 16 }}>
           {resumen.comparativaMkt?.anterior && (
             <div className="ibox">
-              🎯 <strong>Marketing</strong> — {resumen.comparativaMkt.actual.mes}: {fmtS(resumen.comparativaMkt.actual.ben)} de beneficio, vs {fmtS(resumen.comparativaMkt.anterior.ben)} en {resumen.comparativaMkt.anterior.mes}
+              🎯 <strong>Marketing</strong> — {resumen.comparativaMkt.actual.mes}: {fmtS(resumen.comparativaMkt.actual.ben)} de beneficio, {resumen.comparativaMkt.actual.n} clientes (vs {fmtS(resumen.comparativaMkt.anterior.ben)} y {resumen.comparativaMkt.anterior.n} clientes en {resumen.comparativaMkt.anterior.mes})
               {resumen.comparativaMkt.deltaPct !== null && (
-                <> → <span className={colorClass(resumen.comparativaMkt.deltaPct)}>{resumen.comparativaMkt.deltaPct >= 0 ? '+' : ''}{resumen.comparativaMkt.deltaPct.toFixed(1)}%</span></>
+                <> → <span className={colorClass(resumen.comparativaMkt.deltaPct)}>{resumen.comparativaMkt.deltaPct >= 0 ? '+' : ''}{resumen.comparativaMkt.deltaPct.toFixed(1)}%</span> en beneficio</>
               )}
             </div>
           )}
           {resumen.comparativaFin?.anterior && (
             <div className="ibox">
-              💰 <strong>Financiero</strong> — {resumen.comparativaFin.actual.mes}: {fmtS(resumen.comparativaFin.actual.ben)} de beneficio, vs {fmtS(resumen.comparativaFin.anterior.ben)} en {resumen.comparativaFin.anterior.mes}
+              💰 <strong>Financiero</strong> — {resumen.comparativaFin.actual.mes}: {fmtS(resumen.comparativaFin.actual.ben)} de beneficio, {resumen.comparativaFin.actual.n} clientes (vs {fmtS(resumen.comparativaFin.anterior.ben)} y {resumen.comparativaFin.anterior.n} clientes en {resumen.comparativaFin.anterior.mes})
               {resumen.comparativaFin.deltaPct !== null && (
-                <> → <span className={colorClass(resumen.comparativaFin.deltaPct)}>{resumen.comparativaFin.deltaPct >= 0 ? '+' : ''}{resumen.comparativaFin.deltaPct.toFixed(1)}%</span></>
+                <> → <span className={colorClass(resumen.comparativaFin.deltaPct)}>{resumen.comparativaFin.deltaPct >= 0 ? '+' : ''}{resumen.comparativaFin.deltaPct.toFixed(1)}%</span> en beneficio</>
               )}
             </div>
           )}
@@ -152,15 +177,51 @@ export default function Historial() {
           <div key={idx} className="hentry">
             <div className="hmonth">
               <span>{h.type === 'mkt' ? '🎯' : '💰'} {h.mes} — {h.type === 'mkt' ? 'Marketing' : 'Financiero'}</span>
-              <span className={colorClass(h.ben)} style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: 15, fontWeight: 700 }}>{fmtS(h.ben)}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className={colorClass(h.ben)} style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: 15, fontWeight: 700 }}>{fmtS(h.ben)}</span>
+                {editingIdx !== idx && (
+                  <>
+                    <button className="addbtn" style={{ width: 'auto', padding: '3px 9px', fontSize: 10 }} onClick={() => startEdit(idx, h)}>✏️ Editar</button>
+                    <button className="rm-btn" onClick={() => deleteHistorialEntry(idx, h.mes)}>✕</button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="hgrid">
-              <div className="hkpi"><div className="hv vg">{fmt(h.facturado || h.rev)}</div><div className="hl">Facturado</div></div>
-              <div className="hkpi"><div className="hv vr">{fmt(h.gastos || h.cost)}</div><div className="hl">Gastos</div></div>
-              <div className="hkpi"><div className={`hv ${colorClass(h.ben)}`}>{fmtS(h.ben)}</div><div className="hl">Beneficio</div></div>
-              <div className="hkpi"><div className="hv vm">{margen(h.ben, h.rev)}</div><div className="hl">Margen</div></div>
-              <div className="hkpi"><div className="hv vx">{h.n}</div><div className="hl">Clientes</div></div>
-            </div>
+
+            {editingIdx === idx && editDraft ? (
+              <div className="ladderbox" style={{ marginTop: 10 }}>
+                <div className="emp-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                  <div className="emp-field">
+                    <label>Facturado (€)</label>
+                    <input type="number" className="inp" value={editDraft.facturado} onChange={(e) => setEditDraft({ ...editDraft, facturado: +e.target.value })} />
+                  </div>
+                  <div className="emp-field">
+                    <label>Gastos (€)</label>
+                    <input type="number" className="inp" value={editDraft.gastos} onChange={(e) => setEditDraft({ ...editDraft, gastos: +e.target.value })} />
+                  </div>
+                  <div className="emp-field">
+                    <label>Clientes</label>
+                    <input type="number" className="inp" min={0} value={editDraft.n} onChange={(e) => setEditDraft({ ...editDraft, n: +e.target.value })} />
+                  </div>
+                </div>
+                <div className="suggestbar">
+                  <div className="suggesttext">Beneficio recalculado: <span className="tier">{fmtS(editDraft.facturado - editDraft.gastos)}</span></div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="applybtn" onClick={() => saveEdit(idx)}>Guardar corrección</button>
+                    <button className="applybtn applied" onClick={() => { setEditingIdx(null); setEditDraft(null); }}>Cancelar</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="hgrid">
+                <div className="hkpi"><div className="hv vg">{fmt(h.facturado || h.rev)}</div><div className="hl">Facturado</div></div>
+                <div className="hkpi"><div className="hv vr">{fmt(h.gastos || h.cost)}</div><div className="hl">Gastos</div></div>
+                <div className="hkpi"><div className={`hv ${colorClass(h.ben)}`}>{fmtS(h.ben)}</div><div className="hl">Beneficio</div></div>
+                <div className="hkpi"><div className="hv vm">{margen(h.ben, h.rev)}</div><div className="hl">Margen</div></div>
+                <div className="hkpi"><div className="hv vx">{h.n}</div><div className="hl">Clientes</div></div>
+              </div>
+            )}
+
             <details style={{ marginTop: 10 }}>
               <summary style={{ fontSize: 11, color: 'var(--muted2)', cursor: 'pointer', padding: '4px 0' }}>Ver detalle clientes →</summary>
               <div style={{ marginTop: 8 }}>
@@ -172,6 +233,9 @@ export default function Historial() {
                     </span>
                   </div>
                 ))}
+                {(!h.clients || h.clients.length === 0) && (
+                  <p style={{ fontSize: 11, color: 'var(--muted)' }}>Sin clientes en el snapshot — si te faltó agregar uno al momento de cerrar, usa "✏️ Editar" arriba para corregir el facturado y el número de clientes a mano.</p>
+                )}
               </div>
             </details>
           </div>
